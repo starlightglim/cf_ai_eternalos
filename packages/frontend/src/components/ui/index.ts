@@ -5,3 +5,4 @@ export { LinkDialog } from './LinkDialog';
 export { IconPicker, getCustomIconComponent } from './IconPicker';
 export { WidgetPicker, getWidgetDefaultSize } from './WidgetPicker';
 export { QuickStartWizard } from './QuickStartWizard';
+export { ErrorBoundary } from './ErrorBoundary';

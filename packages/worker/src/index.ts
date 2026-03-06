@@ -38,18 +38,33 @@ export interface Env {
 
   // Secrets
   JWT_SECRET: string;
+  RESEND_API_KEY?: string; // For sending transactional emails (password reset, etc.)
 
   // Environment settings
   ENVIRONMENT?: 'development' | 'production';
   ALLOWED_ORIGINS?: string; // Comma-separated list of allowed origins for production
+  FROM_EMAIL?: string; // Sender email address (e.g., "EternalOS <noreply@eternalos.app>")
+  APP_URL?: string; // Base URL for the app (e.g., "https://eternalos.app")
 }
 
 export { UserDesktop };
 
-// Helper to add CORS headers to response
+// Standard security headers applied to every response
+const SECURITY_HEADERS: Record<string, string> = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+};
+
+// Helper to add CORS + security headers to response
 function withCors(response: Response, corsHeaders: Record<string, string>): Response {
   const newHeaders = new Headers(response.headers);
   for (const [key, value] of Object.entries(corsHeaders)) {
+    newHeaders.set(key, value);
+  }
+  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
     newHeaders.set(key, value);
   }
   return new Response(response.body, {

@@ -77,6 +77,43 @@ export function FolderView({ folderId, visitorItems, isVisitorMode = false, isDr
   const folderItem = folderId ? allItems.find((i) => i.id === folderId) : undefined;
   const eosFolderName = folderItem ? slugify(folderItem.name) : undefined;
 
+  // Build breadcrumb trail by walking up parentId chain
+  const breadcrumbs = useMemo(() => {
+    const trail: Array<{ id: string; name: string }> = [];
+    let currentId = folderId;
+    const visited = new Set<string>();
+    while (currentId) {
+      if (visited.has(currentId)) break; // safety against cycles
+      visited.add(currentId);
+      const item = allItems.find((i) => i.id === currentId);
+      if (!item) break;
+      trail.unshift({ id: item.id, name: item.name });
+      currentId = item.parentId;
+    }
+    return trail;
+  }, [folderId, allItems]);
+
+  // Open a parent folder from breadcrumb click
+  const handleBreadcrumbClick = useCallback(
+    (targetFolderId: string) => {
+      windowOffsetCounter = (windowOffsetCounter + 1) % 10;
+      const offset = windowOffsetCounter * 20;
+      const target = allItems.find((i) => i.id === targetFolderId);
+      if (!target) return;
+      openWindow({
+        id: `folder-${targetFolderId}`,
+        title: target.name,
+        position: { x: 80 + offset, y: 40 + offset },
+        size: { width: 400, height: 300 },
+        minimized: false,
+        maximized: false,
+        contentType: 'folder',
+        contentId: targetFolderId,
+      });
+    },
+    [allItems, openWindow]
+  );
+
   // Handle double-click to open any item — uses same window ID patterns as Desktop
   const handleItemOpen = useCallback(
     (item: DesktopItem) => {
@@ -539,6 +576,30 @@ export function FolderView({ folderId, visitorItems, isVisitorMode = false, isDr
     }
   };
 
+  // Breadcrumb bar (shared between empty and populated views)
+  const breadcrumbBar = breadcrumbs.length > 0 ? (
+    <div className={styles.breadcrumbs}>
+      {breadcrumbs.map((crumb, i) => {
+        const isLast = i === breadcrumbs.length - 1;
+        return (
+          <span key={crumb.id}>
+            {i > 0 && <span className={styles.breadcrumbSep}>▸</span>}
+            {isLast ? (
+              <span className={styles.breadcrumbCurrent}>{crumb.name}</span>
+            ) : (
+              <button
+                className={styles.breadcrumbLink}
+                onClick={() => handleBreadcrumbClick(crumb.id)}
+              >
+                {crumb.name}
+              </button>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  ) : null;
+
   if (items.length === 0) {
     return (
       <div
@@ -546,6 +607,7 @@ export function FolderView({ folderId, visitorItems, isVisitorMode = false, isDr
         data-folder-window-id={folderId}
         onContextMenu={handleFolderContextMenu}
       >
+        {breadcrumbBar}
         <p>This folder is empty</p>
         {contextMenu && (
           <ContextMenu
@@ -568,6 +630,7 @@ export function FolderView({ folderId, visitorItems, isVisitorMode = false, isDr
       onPointerUp={draggingId ? handlePointerUp : undefined}
       onPointerCancel={draggingId ? handlePointerCancel : undefined}
     >
+      {breadcrumbBar}
       <div className={styles.itemGrid}>
         {items.map((item) => (
           <div

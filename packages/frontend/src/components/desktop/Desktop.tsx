@@ -840,14 +840,45 @@ export function Desktop({ isVisitorMode = false }: DesktopProps) {
         const deltaGridY = Math.round(dragOffset.y / GRID_CELL_SIZE) - dragItemStartGridPos.current.y;
 
         if (isDraggingMultiple) {
-          // Move all selected items by the same delta
+          // Move all selected items by the same delta, checking for overlaps
+          const draggedSet = new Set(draggedItemIds);
+          const newlyAssigned = new Set<string>();
+
+          // Helper: check if position is occupied by a non-dragged item OR already assigned
+          const isOccupiedForBatch = (x: number, y: number) => {
+            const key = `${x},${y}`;
+            if (newlyAssigned.has(key)) return true;
+            const occupantId = occupiedPositions.get(key);
+            return occupantId !== undefined && !draggedSet.has(occupantId);
+          };
+
+          // Helper: find nearest available position for batch move
+          const findAvailableForBatch = (targetX: number, targetY: number) => {
+            if (!isOccupiedForBatch(targetX, targetY)) return { x: targetX, y: targetY };
+            for (let ring = 1; ring < 20; ring++) {
+              for (let dx = -ring; dx <= ring; dx++) {
+                for (let dy = -ring; dy <= ring; dy++) {
+                  if (Math.abs(dx) === ring || Math.abs(dy) === ring) {
+                    const nx = targetX + dx;
+                    const ny = targetY + dy;
+                    if (nx >= 0 && ny >= 0 && !isOccupiedForBatch(nx, ny)) {
+                      return { x: nx, y: ny };
+                    }
+                  }
+                }
+              }
+            }
+            return { x: targetX, y: targetY };
+          };
+
           draggedItemIds.forEach((id) => {
             const startPos = draggedItemsStartPos.current!.get(id);
             if (startPos) {
-              const newX = Math.max(0, startPos.x + deltaGridX);
-              const newY = Math.max(0, startPos.y + deltaGridY);
-              // Note: We don't check for overlaps between selected items themselves
-              moveItem(id, { x: newX, y: newY });
+              const targetX = Math.max(0, startPos.x + deltaGridX);
+              const targetY = Math.max(0, startPos.y + deltaGridY);
+              const finalPos = findAvailableForBatch(targetX, targetY);
+              newlyAssigned.add(`${finalPos.x},${finalPos.y}`);
+              moveItem(id, finalPos);
             }
           });
         } else {
@@ -863,7 +894,7 @@ export function Desktop({ isVisitorMode = false }: DesktopProps) {
 
       resetDragState();
     },
-    [draggingId, dragOffset, moveItem, moveToTrash, findNearestAvailablePosition, folderDropTargetId, folderWindowDropTargetId, resetDragState]
+    [draggingId, dragOffset, moveItem, moveToTrash, findNearestAvailablePosition, occupiedPositions, folderDropTargetId, folderWindowDropTargetId, resetDragState]
   );
 
   // Safety: Clean up stale drag state if component becomes unfocused during drag

@@ -18,6 +18,56 @@
 }
 
 /* ============================================
+   BREADCRUMBS
+   Navigation trail for nested folders
+   ============================================ */
+
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 0 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--shadow);
+  font-family: var(--font-geneva);
+  font-size: 10px;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
+  flex-wrap: wrap;
+  min-height: 18px;
+}
+
+.breadcrumbLink {
+  background: none;
+  border: none;
+  padding: 1px 3px;
+  font-family: var(--font-geneva);
+  font-size: 10px;
+  color: var(--black);
+  cursor: pointer;
+  text-decoration: underline;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
+}
+
+.breadcrumbLink:hover {
+  background: var(--selection);
+  color: var(--selection-text);
+}
+
+.breadcrumbCurrent {
+  padding: 1px 3px;
+  font-weight: bold;
+  color: var(--black);
+}
+
+.breadcrumbSep {
+  color: var(--shadow);
+  font-size: 8px;
+  margin: 0 1px;
+}
+
+/* ============================================
    ITEM GRID
    Icon layout similar to desktop
    ============================================ */

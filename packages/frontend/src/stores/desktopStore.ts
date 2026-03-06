@@ -830,7 +830,14 @@ export const useDesktopStore = create<DesktopStore>((set, get) => ({
     set((state) => {
       const newItems = state.items.map((item) =>
         allIdsToTrash.has(item.id)
-          ? { ...item, isTrashed: true, trashedAt: now, updatedAt: now }
+          ? {
+              ...item,
+              isTrashed: true,
+              trashedAt: now,
+              updatedAt: now,
+              // Save original parent so restore can put it back
+              originalParentId: item.parentId,
+            }
           : item
       );
       if (isApiConfigured) {
@@ -847,10 +854,13 @@ export const useDesktopStore = create<DesktopStore>((set, get) => ({
 
     // Sync to API if configured
     if (isApiConfigured) {
-      const updates = idsArray.map((id) => ({
-        id,
-        updates: { isTrashed: true, trashedAt: now },
-      }));
+      const updates = idsArray.map((id) => {
+        const item = items.find((i) => i.id === id);
+        return {
+          id,
+          updates: { isTrashed: true, trashedAt: now, originalParentId: item?.parentId ?? null },
+        };
+      });
       apiUpdateItems(updates).catch((error) => {
         console.error('Failed to move items to trash:', error);
         showError(
@@ -862,12 +872,33 @@ export const useDesktopStore = create<DesktopStore>((set, get) => ({
   },
 
   restoreFromTrash: (ids) => {
+    const { items } = get();
+
     set((state) => {
-      const newItems = state.items.map((item) =>
-        ids.includes(item.id)
-          ? { ...item, isTrashed: false, trashedAt: undefined, updatedAt: Date.now() }
-          : item
-      );
+      const newItems = state.items.map((item) => {
+        if (!ids.includes(item.id)) return item;
+
+        // Restore to original parent if it still exists and isn't trashed
+        let restoreParentId: string | null = null;
+        if (item.originalParentId) {
+          const parent = state.items.find(
+            (p) => p.id === item.originalParentId && !p.isTrashed
+          );
+          if (parent) {
+            restoreParentId = item.originalParentId;
+          }
+          // If parent is missing or also trashed, restore to desktop root (null)
+        }
+
+        return {
+          ...item,
+          isTrashed: false,
+          trashedAt: undefined,
+          originalParentId: undefined,
+          parentId: restoreParentId,
+          updatedAt: Date.now(),
+        };
+      });
       if (isApiConfigured) {
         cacheItems(newItems);
       }
@@ -876,10 +907,26 @@ export const useDesktopStore = create<DesktopStore>((set, get) => ({
 
     // Sync to API if configured
     if (isApiConfigured) {
-      const updates = ids.map((id) => ({
-        id,
-        updates: { isTrashed: false, trashedAt: undefined },
-      }));
+      const updates = ids.map((id) => {
+        const item = items.find((i) => i.id === id);
+        // Compute restore parentId same as above
+        let restoreParentId: string | null = null;
+        if (item?.originalParentId) {
+          const parent = items.find(
+            (p) => p.id === item.originalParentId && !p.isTrashed
+          );
+          if (parent) restoreParentId = item.originalParentId;
+        }
+        return {
+          id,
+          updates: {
+            isTrashed: false,
+            trashedAt: undefined,
+            originalParentId: undefined,
+            parentId: restoreParentId,
+          },
+        };
+      });
       apiUpdateItems(updates).catch((error) => {
         console.error('Failed to restore items from trash:', error);
         showError(

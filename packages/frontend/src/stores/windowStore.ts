@@ -474,3 +474,41 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
     set({ windows: [], nextZIndex: 1 });
   },
 }));
+
+// ============================================
+// Constrain windows to viewport on resize
+// ============================================
+let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+window.addEventListener('resize', () => {
+  // Debounce to avoid excessive updates during resize
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const { windows } = useWindowStore.getState();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const menuBarHeight = 20;
+    let changed = false;
+
+    const adjusted = windows.map((w) => {
+      if (w.minimized) return w;
+      let { x, y } = w.position;
+      // Ensure at least 100px of window is visible horizontally
+      if (x + 100 > vw) {
+        x = Math.max(0, vw - 100);
+        changed = true;
+      }
+      // Ensure title bar is reachable (below menu bar, above bottom)
+      if (y + 30 > vh) {
+        y = Math.max(menuBarHeight, vh - 30);
+        changed = true;
+      }
+      if (x === w.position.x && y === w.position.y) return w;
+      changed = true;
+      return { ...w, position: { x, y } };
+    });
+
+    if (changed) {
+      useWindowStore.setState({ windows: adjusted });
+    }
+  }, 200);
+});

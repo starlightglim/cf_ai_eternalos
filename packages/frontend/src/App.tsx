@@ -8,7 +8,8 @@ import { SignupPage } from './pages/SignupPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { VisitorPage } from './pages/VisitorPage'
-import { LoadingOverlay, AlertDialog } from './components/ui'
+import { NotFoundPage } from './pages/NotFoundPage'
+import { LoadingOverlay, AlertDialog, ErrorBoundary } from './components/ui'
 import { useAuthStore } from './stores/authStore'
 import { useAlertStore } from './stores/alertStore'
 import { useIsMobile } from './hooks/useIsMobile'
@@ -118,8 +119,8 @@ function CatchAllRoute() {
     return <UserDesktopRoute />
   }
 
-  // Everything else → redirect to landing page
-  return <Navigate to="/" replace />
+  // Everything else → show 404 page
+  return <NotFoundPage />
 }
 
 function App() {
@@ -136,32 +137,32 @@ function App() {
   }
 
   return (
-    <>
+    <ErrorBoundary>
       {/* Global Alert Dialog */}
       <GlobalAlert />
 
       <Routes>
-      {/* Public routes */}
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<SignupPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
+        {/* Public routes */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-      {/* Protected routes */}
-      <Route
-        path="/desktop"
-        element={
-          <ProtectedRoute>
-            <ResponsiveDesktop />
-          </ProtectedRoute>
-        }
-      />
+        {/* Protected routes */}
+        <Route
+          path="/desktop"
+          element={
+            <ProtectedRoute>
+              <ResponsiveDesktop />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Catch-all: handles /@username visitor routes + redirects unknown paths */}
-      <Route path="*" element={<CatchAllRoute />} />
-    </Routes>
-    </>
+        {/* Catch-all: handles /@username visitor routes + redirects unknown paths */}
+        <Route path="*" element={<CatchAllRoute />} />
+      </Routes>
+    </ErrorBoundary>
   )
 }
 

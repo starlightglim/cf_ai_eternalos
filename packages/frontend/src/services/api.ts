@@ -29,6 +29,13 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
+// Callback for handling session expiry — set by authStore during init
+let onSessionExpired: (() => void) | null = null;
+
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  onSessionExpired = handler;
+}
+
 /**
  * Make an authenticated API request
  */
@@ -51,6 +58,13 @@ async function apiRequest<T>(
   });
 
   if (!response.ok) {
+    // Handle expired/invalid token — trigger session expired flow
+    if (response.status === 401 && authToken) {
+      authToken = null;
+      onSessionExpired?.();
+      throw new Error('Session expired. Please log in again.');
+    }
+
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
     throw new Error(error.error || `HTTP ${response.status}`);
   }
@@ -214,9 +228,10 @@ export async function uploadFile(
   formData.append('parentId', parentId || '');
   formData.append('position', JSON.stringify(position));
 
-  // Use XMLHttpRequest for progress tracking
+  // Use XMLHttpRequest for progress tracking with 60s timeout
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    xhr.timeout = 60000; // 60 second timeout
 
     xhr.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable && onProgress) {
@@ -245,6 +260,10 @@ export async function uploadFile(
 
     xhr.addEventListener('error', () => {
       reject(new Error('Network error during upload'));
+    });
+
+    xhr.addEventListener('timeout', () => {
+      reject(new Error('Upload timed out. Please try again.'));
     });
 
     xhr.addEventListener('abort', () => {

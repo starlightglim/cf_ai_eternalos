@@ -297,6 +297,7 @@ export class UserDesktop {
       'stickerConfig',
       'isTrashed',
       'trashedAt',
+      'originalParentId',
     ];
 
     const updated: DesktopItem[] = [];
@@ -309,6 +310,33 @@ export class UserDesktop {
         for (const field of ALLOWED_UPDATE_FIELDS) {
           if (updates[field] !== undefined) {
             (filteredUpdates as Record<string, unknown>)[field] = updates[field];
+          }
+        }
+
+        // Prevent circular folder references: if parentId is being changed,
+        // walk up the target parent's ancestor chain and ensure this item
+        // doesn't appear (which would create a cycle).
+        if (
+          filteredUpdates.parentId !== undefined &&
+          filteredUpdates.parentId !== null &&
+          item.type === 'folder'
+        ) {
+          let ancestor: string | null | undefined = filteredUpdates.parentId as string;
+          let isCycle = false;
+          const visited = new Set<string>();
+          while (ancestor) {
+            if (ancestor === id) {
+              isCycle = true;
+              break;
+            }
+            if (visited.has(ancestor)) break; // safety against existing cycles
+            visited.add(ancestor);
+            const parentItem = this.items.get(ancestor);
+            ancestor = parentItem?.parentId;
+          }
+          if (isCycle) {
+            // Skip this update — moving a folder into its own descendant
+            continue;
           }
         }
 
@@ -711,7 +739,8 @@ export class UserDesktop {
     const currentConfig = (item.widgetConfig || { entries: [] }) as GuestbookConfig;
     const entries = currentConfig.entries || [];
 
-    // Add new entry
+    // Add new entry — trim + truncate; XSS prevention handled by React's
+    // automatic JSX escaping on the frontend render path
     const newEntry: GuestbookEntry = {
       name: entry.name.trim().slice(0, 50),
       message: entry.message.trim().slice(0, 500),

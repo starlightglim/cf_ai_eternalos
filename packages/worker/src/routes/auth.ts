@@ -13,6 +13,7 @@ import type { UserRecord, SessionRecord, PasswordResetRecord } from '../types';
 import { signJWT } from '../utils/jwt';
 import { hashPassword, verifyPassword } from '../utils/password';
 import { sanitizeEmail, sanitizeUsername } from '../utils/sanitize';
+import { sendEmail, getPasswordResetEmail } from '../utils/email';
 
 interface SignupBody {
   email: string;
@@ -38,11 +39,20 @@ function validateEmail(email: string): boolean {
 }
 
 function validatePassword(password: string): string | null {
-  if (password.length < 6) {
-    return 'Password must be at least 6 characters';
+  if (password.length < 8) {
+    return 'Password must be at least 8 characters';
   }
   if (password.length > 128) {
     return 'Password must be 128 characters or less';
+  }
+  if (!/[a-z]/.test(password)) {
+    return 'Password must contain at least one lowercase letter';
+  }
+  if (!/[A-Z]/.test(password)) {
+    return 'Password must contain at least one uppercase letter';
+  }
+  if (!/[0-9]/.test(password)) {
+    return 'Password must contain at least one number';
   }
   return null;
 }
@@ -719,15 +729,35 @@ export async function handleForgotPassword(request: Request, env: Env): Promise<
     expirationTtl: ttlSeconds,
   });
 
-  // In production, send this via email using an email service (e.g., Resend, Mailgun)
-  // In development, the token is returned in the response for testing convenience
+  // Build the reset URL
+  const appUrl = env.APP_URL || 'https://eternalos.app';
+  const resetUrl = `${appUrl}/reset-password?token=${resetToken}`;
+
   const isDev = env.ENVIRONMENT !== 'production';
+
+  // Send password reset email (if Resend is configured)
+  if (env.RESEND_API_KEY && env.FROM_EMAIL) {
+    const { html, text } = getPasswordResetEmail(resetUrl, userRecord.username);
+    const sent = await sendEmail(env.RESEND_API_KEY, env.FROM_EMAIL, {
+      to: normalizedEmail,
+      subject: 'Reset your EternalOS password',
+      html,
+      text,
+    });
+
+    if (!sent) {
+      console.error(`Failed to send password reset email to ${normalizedEmail}`);
+    }
+  } else if (isDev) {
+    // In development without email configured, log the reset URL
+    console.log(`[DEV] Password reset URL: ${resetUrl}`);
+  }
 
   return Response.json({
     success: true,
     message: 'If an account with that email exists, a reset link has been generated.',
     // Only include token in development mode — NEVER in production
-    ...(isDev ? { resetToken, resetUrl: `/reset-password?token=${resetToken}` } : {}),
+    ...(isDev ? { resetToken, resetUrl } : {}),
   });
 }
 

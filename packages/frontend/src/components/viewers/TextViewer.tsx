@@ -13,6 +13,9 @@ interface TextViewerProps {
   isOwner?: boolean; // Whether current user owns this file
 }
 
+// 100KB character limit to prevent browser/storage performance issues
+const MAX_TEXT_LENGTH = 100_000;
+
 /**
  * TextViewer - SimpleText clone
  * Features:
@@ -98,12 +101,14 @@ export function TextViewer({
       // Update the desktop item with new content
       updateItem(itemId, { textContent: content });
       setIsDirty(false);
+      // Remove unsaved indicator from window title
+      updateWindowTitle(windowId, fileName);
     } catch (error) {
       console.error('Failed to save:', error);
     } finally {
       setIsSaving(false);
     }
-  }, [content, isDirty, isOwner, itemId, updateItem]);
+  }, [content, isDirty, isOwner, itemId, updateItem, windowId, fileName, updateWindowTitle]);
 
   // Auto-save on unmount (e.g., when window is closed) if there are unsaved changes
   const contentRef = useRef(content);
@@ -138,7 +143,14 @@ export function TextViewer({
   // Handle content change
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     if (!isOwner) return;
-    setContent(e.target.value);
+    const newValue = e.target.value;
+    // Enforce size limit to prevent browser/storage performance issues
+    if (newValue.length > MAX_TEXT_LENGTH) return;
+    setContent(newValue);
+    if (!isDirty) {
+      // First edit — show unsaved indicator in window title bar
+      updateWindowTitle(windowId, `• ${fileName}`);
+    }
     setIsDirty(true);
   };
 
@@ -240,8 +252,8 @@ export function TextViewer({
       {/* Status bar */}
       <div className={styles.statusBar}>
         <div className={styles.statusLeft}>
-          <span className={styles.charCount}>
-            {content.length} characters
+          <span className={content.length >= MAX_TEXT_LENGTH * 0.9 ? styles.charCountWarn : styles.charCount}>
+            {content.length.toLocaleString()}{content.length >= MAX_TEXT_LENGTH * 0.9 ? ` / ${MAX_TEXT_LENGTH.toLocaleString()}` : ''} characters
           </span>
           <span className={styles.lineCount}>
             {content.split('\n').length} lines

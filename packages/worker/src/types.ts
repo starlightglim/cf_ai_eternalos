@@ -81,6 +81,7 @@ export interface DesktopItem {
   // Trash state
   isTrashed?: boolean; // true if item is in trash
   trashedAt?: number; // unix timestamp when moved to trash
+  originalParentId?: string | null; // parentId before trashing, for restore
   // Optional fields based on type
   r2Key?: string; // R2 object key for uploaded files
   mimeType?: string;

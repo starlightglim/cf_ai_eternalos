@@ -7,6 +7,7 @@ import type { UserProfile, AuthUser } from '../types';
 import {
   isApiConfigured,
   setAuthToken,
+  setSessionExpiredHandler,
   signup as apiSignup,
   login as apiLogin,
   logout as apiLogout,
@@ -301,6 +302,19 @@ export const useAuthStore = create<AuthStore>()(
         if (token) {
           setAuthToken(token);
         }
+
+        // Register session expired handler so API 401s trigger logout
+        setSessionExpiredHandler(() => {
+          setAuthToken(null);
+          useWindowStore.getState().clearWindowState();
+          set({
+            user: null,
+            profile: null,
+            token: null,
+            loading: false,
+            error: 'Your session has expired. Please log in again.',
+          });
+        });
 
         // In demo mode, auto-login with mock user
         if (!isApiConfigured) {

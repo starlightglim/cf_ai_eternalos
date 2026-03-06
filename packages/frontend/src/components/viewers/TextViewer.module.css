@@ -167,6 +167,12 @@
   opacity: 0.8;
 }
 
+.charCountWarn {
+  color: #990000;
+  font-weight: bold;
+  opacity: 1;
+}
+
 .downloadButton {
   font-family: var(--font-geneva);
   font-size: 10px;

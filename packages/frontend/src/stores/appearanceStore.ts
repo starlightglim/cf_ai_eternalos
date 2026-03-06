@@ -179,17 +179,60 @@ const ALLOWED_CSS_URL_PREFIXES = [
 ];
 
 /**
+ * Validate a URL string against the allowlist.
+ * Uses proper URL parsing instead of regex for security.
+ */
+function isAllowedCSSUrl(urlValue: string): boolean {
+  // Normalize: trim whitespace, remove quotes, decode
+  const normalized = urlValue.trim().replace(/^['"]|['"]$/g, '');
+
+  // Block dangerous protocols explicitly
+  const lowerUrl = normalized.toLowerCase();
+  if (
+    lowerUrl.startsWith('javascript:') ||
+    lowerUrl.startsWith('data:') ||
+    lowerUrl.startsWith('vbscript:') ||
+    lowerUrl.startsWith('file:')
+  ) {
+    return false;
+  }
+
+  // Only allow relative paths starting with our allowed prefixes
+  // This blocks absolute URLs (http://, https://, //) which could exfiltrate data
+  if (normalized.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(normalized)) {
+    return false;
+  }
+
+  // Check against allowlist
+  return ALLOWED_CSS_URL_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+}
+
+/**
  * Sanitize CSS url() values — strip any url() not matching the allowlist.
  * This is defense-in-depth; the editor validates before saving,
  * but this catches anything that slips through (e.g., visitor mode injection).
+ *
+ * Uses a more robust regex that handles:
+ * - Quoted and unquoted URLs
+ * - Whitespace/newlines inside url()
+ * - Escaped characters
  */
 function sanitizeCSSUrls(css: string): string {
-  return css.replace(/url\s*\(\s*(['"]?)([^'")\s]+)\1\s*\)/gi, (match, _quote, urlValue) => {
-    if (ALLOWED_CSS_URL_PREFIXES.some((prefix) => urlValue.startsWith(prefix))) {
-      return match; // Allowed — keep it
+  // Match url() with optional quotes, handling whitespace and newlines
+  // This regex captures the full url(...) including any internal whitespace
+  return css.replace(
+    /url\s*\(\s*(['"]?)([^)]*?)\1\s*\)/gi,
+    (match, _quote, urlValue) => {
+      // Clean up the URL value (remove internal whitespace/newlines that could be used to bypass)
+      const cleanedUrl = urlValue.replace(/[\r\n\t]/g, '').trim();
+
+      if (isAllowedCSSUrl(cleanedUrl)) {
+        // Reconstruct with cleaned URL to prevent whitespace-based attacks
+        return `url('${cleanedUrl}')`;
+      }
+      return 'url(about:blank)'; // Blocked — neutralize
     }
-    return 'url(about:blank)'; // Blocked — neutralize
-  });
+  );
 }
 
 /**
@@ -219,46 +262,88 @@ export function applyCustomCSS(css: string | undefined) {
 }
 
 /**
- * Scope CSS to .user-desktop to prevent affecting system UI
+ * Parse CSS into top-level rule blocks by tracking brace depth.
+ * Returns an array of { selector, body } for each rule.
+ * This prevents scope-escape attacks like: `.user-desktop { } body { color:red }`
+ */
+function parseTopLevelRules(css: string): Array<{ selector: string; body: string }> {
+  const rules: Array<{ selector: string; body: string }> = [];
+  let depth = 0;
+  let current = '';
+  let selectorEnd = -1;
+
+  // Strip CSS comments first to avoid false brace matches inside comments
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  for (let i = 0; i < stripped.length; i++) {
+    const ch = stripped[i];
+
+    if (ch === '{') {
+      if (depth === 0) {
+        selectorEnd = current.length;
+      }
+      depth++;
+      current += ch;
+    } else if (ch === '}') {
+      if (depth <= 0) {
+        // Stray closing brace (no matching open) — skip it to prevent
+        // scope-escape via leading `}` characters
+        depth = 0;
+        current = '';
+        selectorEnd = -1;
+        continue;
+      }
+      depth--;
+      current += ch;
+      if (depth === 0) {
+        const selector = current.slice(0, selectorEnd).trim();
+        // body is everything between the first { and last }
+        const body = current.slice(selectorEnd + 1, current.length - 1).trim();
+        if (selector) {
+          rules.push({ selector, body });
+        }
+        current = '';
+        selectorEnd = -1;
+      }
+    } else {
+      current += ch;
+    }
+  }
+
+  return rules;
+}
+
+/**
+ * Scope CSS to .user-desktop to prevent affecting system UI.
+ * Uses brace-depth parsing to prevent scope-escape attacks.
  */
 function scopeCSSToUserDesktop(css: string): string {
   if (!css.trim()) return '';
 
-  const rules = css.split('}');
+  const rules = parseTopLevelRules(css);
   const scopedRules: string[] = [];
 
-  for (let rule of rules) {
-    rule = rule.trim();
-    if (!rule) continue;
-
-    const braceIndex = rule.indexOf('{');
-    if (braceIndex === -1) continue;
-
-    const selectors = rule.slice(0, braceIndex).trim();
-    const declarations = rule.slice(braceIndex + 1).trim();
-
+  for (const { selector, body } of rules) {
     // Handle @keyframes specially - keep as-is
-    if (selectors.startsWith('@keyframes') || selectors.startsWith('@-webkit-keyframes')) {
-      scopedRules.push(`${rule}}`);
+    if (selector.startsWith('@keyframes') || selector.startsWith('@-webkit-keyframes')) {
+      scopedRules.push(`${selector} { ${body} }`);
       continue;
     }
 
     // Handle @media/@supports — recursively scope inner selectors
-    if (selectors.startsWith('@media') || selectors.startsWith('@supports')) {
-      const atRuleHeader = selectors;
-      const innerScoped = scopeCSSToUserDesktop(declarations + '}');
-      const cleanInner = innerScoped.trim().replace(/}\s*$/, '');
-      scopedRules.push(`${atRuleHeader} { ${cleanInner} }}`);
+    if (selector.startsWith('@media') || selector.startsWith('@supports')) {
+      const innerScoped = scopeCSSToUserDesktop(body);
+      scopedRules.push(`${selector} { ${innerScoped} }`);
       continue;
     }
 
     // Skip @font-face for security
-    if (selectors.startsWith('@font-face')) {
+    if (selector.startsWith('@font-face')) {
       continue;
     }
 
     // Scope each selector
-    const scopedSelectors = selectors
+    const scopedSelectors = selector
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
@@ -269,7 +354,7 @@ function scopeCSSToUserDesktop(css: string): string {
       })
       .join(', ');
 
-    scopedRules.push(`${scopedSelectors} { ${declarations} }`);
+    scopedRules.push(`${scopedSelectors} { ${body} }`);
   }
 
   return scopedRules.join('\n');
